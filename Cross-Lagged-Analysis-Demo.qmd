@@ -1,0 +1,196 @@
+---
+title: "Cross-Lagged-Analysis-Demo"
+---
+
+## Cross-Lagged and Different Time-Points Analyses
+
+This document will focus on explaining the ability of performing cross-lagged analyses and analyses at different time-points in R. Often, this skill is taught within the rigid bounds of SPSS or JASP. R offers greater flexibility and transparency in such analyses, and is an indispensable tool in working toward open, transparent sciences.
+
+To begin, import the following packages as the basic ones necessary for this project:
+
+```{r}
+pacman::p_load(tidyverse,
+               lavaan, # SEM package
+               lm.beta, # for finding standardized betas
+               readxl, # reading xlsx files
+               rstatix, # anova_test
+               psych, # better descriptive stats
+               cowplot, # better APA-formatted plots
+               performance) # model assumptions testing made easier
+```
+
+### Introduction to the data
+
+First, import the data supplied to you in the file `cross-lagged-analysis-data.xlsx`. This file can easily be read with `read_excel` as part of the `readxl` package.
+
+```{r}
+# loading data into a "depression data" data frame, dep_df
+dep_df <- read_excel("cross-lagged_analysis_data.xlsx")
+head(dep_df)
+```
+
+Here is a breakdown of the variables:
+
+-   `dep_t1` : Self-reported depression measures at $t_1$
+
+-   `dep_t2`: Self-reported depression measures at $t_2$
+
+-   `commun_t1`: Communication skills at $t_1$
+
+-   `commun_t2`: Communication skills at $t_2$
+
+Our current task is to investigate whether poor communication skills promote depressive symptoms, or if depressive symptoms predict poor communication skills. We will explore the directionality of this relationship using a cross-lagged analysis.
+
+The first step is to test whether or not depression symptoms at $t_1$ are correlated with communication skills at $t_2$, and whether or not depression symptoms at $t_2$ are associated with communication skills at $t_1$. This can be done with two simple correlation tests. We will test the first here--
+
+```{r}
+cor.test(dep_df$dep_t1, dep_df$commun_t2)
+```
+
+Which suggests, with a $b_{d_1\rightarrow c_2} = -.235, t = -2.83, p < .01$, that depressive symptoms at $t_1$ are correlated with communication skills at $t_2$. Now we will repeat the same correlation code, but swapping each variable's time:
+
+```{r}
+cor.test(dep_df$commun_t1, dep_df$dep_t2)
+```
+
+This correlation is also significant, with $b_{c_1 \rightarrow d_2} = -.457, t=-6.02, p < .001$.
+
+### Multiple regression for cross-lagged analysis
+
+With significant correlations confirmed, we may continue on to running a multiple regression. The steps will be as follows:
+
+1.  Create a model describing the stability of depression symptoms from $t_1 \rightarrow t_2$
+2.  Create a model describing the stability of communication skills from $t_1 \rightarrow t_2$
+3.  Regress depressive symptoms at $t_2$ onto those at $t_1$ *and* communication skills at $t_1$
+4.  Regress communication skills at $t_2$ onto those at $t_1$ *and* depression symptoms at $t_1$
+
+The third step describes predicting depressive symptoms at $t_2$ with communication skills at $t_1$ while controlling for depressive symptoms at $t_1$. The fourth does the same, but flipped.
+
+We will do all of these in one code chunk, as there are relatively few lines.
+
+```{r}
+# stability: regression dep_t2 onto dep_t1
+fit_dep_0 <- lm(dep_t2 ~ dep_t1, data = dep_df)
+
+# stability: regression commun_t2 onto commun_t1
+fit_comm_0 <- lm(commun_t2 ~ commun_t1, data = dep_df)
+
+# multiple regressions for cross-lagged analyses
+fit1 <- lm(dep_t2 ~ dep_t1 + commun_t1, data = dep_df)
+fit2 <- lm(commun_t2 ~ dep_t1 + commun_t1, data = dep_df)
+
+# getting a summary with the standardized beta:
+fit_dep_0 %>% lm.beta() %>% summary()
+fit_comm_0 %>% lm.beta() %>% summary()
+```
+
+The results of our regressions indicate that depression symptoms at $t_1$ significantly predict depression symptoms at $t_2$, with $\beta_{d_1 \rightarrow d_2} = 0.53, p < .001$. The same is true for communication skills at $t_1$ predicting communication skills at $t_2$, $\beta_{c_1 \rightarrow c_2} = 0.39, p < .001$. Both results indicate that depression symptoms and communication skills remain stable over the time interval.
+
+Now we will call for summaries of the two multiple regressions:
+
+```{r}
+fit1 %>% lm.beta() %>% summary()
+fit2 %>% lm.beta() %>% summary()
+```
+
+The cross-lagged analyses indicate that greater communication skills at $t_1$ significantly predict lower depressive symptoms at $t_2$ while controlling for depression symptoms at $t_1$, $\beta_{c_1 \rightarrow d_2} = -0.31, t(136) = -4.32, p < .001$. However, greater initial depressive symptoms also remained a significant predictor of later depressive symptoms, controlling for initial communication skills, $\beta_{d_1 \rightarrow d_2} = 0.42, t(136) = 5.80, p < .001$. Taken together, this might suggest that there is a limited preventative power to communication skills, depending upon how great depression symptoms are.
+
+The final multiple regression suggested that initial depressive symptoms do not predict communication skills at a later time, $\beta_{d_1 \rightarrow c_2} = -0.12, t(136) = -1.40, p = .17$. That is, initial depressive symptoms at $t_1$ do not predict any change in communication skills as measured at $t_2$ beyond that change attributable to initial communication skills at $t_1$. However, the results suggest that better communication skills at $t_1$ predict better communication skills at $t_2$ while controlling for initial depression symptoms, $\beta_{c_1 \rightarrow c_2} = 0.35, t(136) = 4.14, p < .001$.
+
+Taken all together, these results suggest that depression does not lead to worse communication skills. Rather, poor communication skills may lead to worsening depression symptoms. Or, taken as its positive, better communication skills may lead to less depression symptoms.
+
+## Time-Points analysis on anorexia intervention data
+
+Here, we are investigating whether a new intervention for anorexia is effective. Again, we may use `read_excel` to parse the data:
+
+```{r}
+anorexia_data <- read_excel("time_points_data.xlsx")
+head(anorexia_data)
+```
+
+Here is the summary of what these variables stand for:
+
+-   **Group:** the experimental group in which a participant is assigned; 0 = control, 1 = experimental
+
+-   **Pretest:** pre-intervention weight in lbs.
+
+-   **Posttest:** post-intervention weight in lbs.
+
+-   **Gain:** the difference of Posttest minus Pretest weight.
+
+Now, what we will do is try using an ANCOVA to analyze this data. However, we will first try using a multiple regression:
+
+```{r}
+# the fit we will compare the multiple regression to
+fitA <- lm(Posttest ~ Pretest, data = anorexia_data)
+
+# multiple regression with Pretest weight and group regressed on posttest weight
+fitB <- lm(Posttest ~ Pretest + Group, data = anorexia_data)
+```
+
+Now, we will pipe `fitA` to see the results:
+
+```{r}
+fitA %>% lm.beta() %>% summary()
+```
+
+And the second fit (it is easier to run these separately, otherwise they can easily be confused in the console):
+
+```{r}
+fitB %>% lm.beta() %>% summary()
+```
+
+Now we can find the difference in $R^2$ between the two fits, $\Delta R^2$ by simply subtracting the results of the regressions: $0.1515-0.0646 = 0.087$. So, $\Delta R^2 = 0.087$. I will provide a brief APA write-up below.
+
+### APA Write-Up of Results
+
+To test the effects of experimental condition on post-treatment anorexia test scores, we ran a multiple regression in which post scores on the DV were regressed first onto pre-scores on the DV and then a variable indicating condition (0 = control, 1 = experimental condition). Pre-treatment anorexia scores, $S_0$, were not significantly associated with post-treatment scores, $S_f$, with $\beta_{0\rightarrow 1} = .25, t(53) = 1.19, p = .06$, indicating that scores did not remain stable over the time interval. In the second regression, in which the grouping factor was added into the model, group $g$ was a significant predictor of post-treatment test scores, $\beta_{g \rightarrow S_f} = .30, t(52) = 2.31, p < .05$. The second model captured a modest, but significant, 8.7% more variance ($\Delta R^2$) than the model with only pre-treatment scores as a predictor.
+
+## ANCOVA
+
+Now we will conduct an ANCOVA on this same data. R automatically detects an ANCOVA test through its variables.
+
+```{r}
+res.aov <- anorexia_data %>% anova_test(Posttest ~ Pretest + Group)
+get_anova_table(res.aov)
+```
+
+The only significant variable was Group, so now we can do post-hoc tests for estimated marginal means and effect size (Cohen's $d$):
+
+```{r}
+pws <- anorexia_data %>%
+  emmeans_test(
+    Posttest ~ Group, covariate = Pretest,
+    p.adjust.method = "bonferroni"
+  )
+# getting the p-value for the estimate marginal mean
+pws$p
+```
+
+And the adjusted p-value:
+
+```{r}
+pws$p.adj
+```
+
+Now we can get the whole table of the estimate marginal means:
+
+```{r}
+get_emmeans(pws)
+```
+
+The estimated marginal means indicates that there is a significant difference in the post-treatment weights by experimental group, such that the estimated marginal mean of the experimental group post-treatment weight is greater than that of the control group by roughly 4 lbs.
+
+Now we calculate Cohen's $d$:
+
+```{r}
+rstatix::cohens_d(Posttest ~ Group,
+                  data = anorexia_data,
+                  paired = F)
+```
+
+There is a moderate effect size of treatment group of $|d| = .68$. Below is a brief APA-style write-up of the results here.
+
+### APA Write-Up of ANCOVA
+
+To evaluate the effects of the intervention on post-treatment anorexia test scores, we conducted an ANCOVA test predicting the $t_2$ post-treatment scores with experimental group (1 = intervention, 0 = control) as a factor and pre-treatment scores as a covariate. Results of the ANCOVA indicated a significant effect of experimental group, controlling for pre-treatment anorexia scores, $F(1, 52) = 5.33, p < .05$. Adjusting for pre-treatment scores, the mean post-treatment scores were greater in the intervention group, $\text{EMM}_\text{intervention} = 85.53, SE = 1.26$, than those in the control group, $\text{EMM}_\text{control} = 81.29, SE = 1.33$, with this difference having a moderate effect size, $|d| = .68$.
